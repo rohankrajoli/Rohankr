@@ -4,35 +4,81 @@ const cursor = document.getElementById("cursor");
 ...
 */
 
+// ===== LENIS SMOOTH SCROLL =====
+const lenis = new Lenis({
+    duration: 1.2,
+    easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+    direction: 'vertical',
+    gestureDirection: 'vertical',
+    smooth: true,
+    mouseMultiplier: 1,
+    smoothTouch: false,
+    touchMultiplier: 2,
+    infinite: false,
+});
+
+function raf(time) {
+    lenis.raf(time);
+    requestAnimationFrame(raf);
+}
+
+requestAnimationFrame(raf);
+
 // ===== TUBELIGHT NAVBAR LOGIC =====
 const navItems = document.querySelectorAll(".nav-item");
 const lampContainer = document.getElementById("lamp-container");
+let isManualScrolling = false;
+let lampUpdatePending = false;
 
 function updateLampPosition(activeItem) {
-    if (!activeItem) return;
-    const rect = activeItem.getBoundingClientRect();
-    const navRect = activeItem.parentElement.getBoundingClientRect();
+    if (!activeItem || lampUpdatePending) return;
     
-    // Calculate position relative to the wrapper
-    const leftPosition = activeItem.offsetLeft;
-    const itemWidth = activeItem.offsetWidth;
-    
-    lampContainer.style.width = `${itemWidth}px`;
-    lampContainer.style.transform = `translateX(${leftPosition}px)`;
+    lampUpdatePending = true;
+    requestAnimationFrame(() => {
+        const leftPosition = activeItem.offsetLeft;
+        const itemWidth = activeItem.offsetWidth;
+        
+        lampContainer.style.width = `${itemWidth}px`;
+        lampContainer.style.transform = `translateX(${leftPosition}px)`;
+        lampUpdatePending = false;
+    });
 }
 
 // Initial position
 const initialActive = document.querySelector(".nav-item.active");
 if (initialActive) {
-    // Wait for layout
-    setTimeout(() => updateLampPosition(initialActive), 100);
+    // Wait for layout and fonts
+    window.addEventListener('load', () => {
+        setTimeout(() => updateLampPosition(initialActive), 100);
+    });
 }
 
 navItems.forEach((item) => {
-    item.addEventListener("click", function() {
-        navItems.forEach(i => i.classList.remove("active"));
-        this.classList.add("active");
-        updateLampPosition(this);
+    item.addEventListener("click", function(e) {
+        e.preventDefault();
+        const targetId = this.getAttribute("href");
+        const target = document.querySelector(targetId);
+        
+        if (target) {
+            isManualScrolling = true;
+            
+            // Update UI immediately
+            navItems.forEach(i => i.classList.remove("active"));
+            this.classList.add("active");
+            updateLampPosition(this);
+
+            lenis.scrollTo(target, {
+                offset: -20,
+                duration: 1.2, // Slightly faster
+                easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+                onComplete: () => {
+                    // Re-enable observer after a short delay
+                    setTimeout(() => {
+                        isManualScrolling = false;
+                    }, 50);
+                }
+            });
+        }
     });
 });
 
@@ -89,28 +135,15 @@ createBubble(120, 15, 15, 8);
 createBubble(280, 75, 65, 15);
 createBubble(140, 85, 75, 10);
 
-// ===== NAVBAR SCROLL (simplified for new design) =====
+// ===== NAVBAR SCROLL (Using Lenis for performance) =====
 const navbar = document.getElementById("navbar");
 
-window.addEventListener("scroll", () => {
-    const currentScroll = window.scrollY;
-    if (currentScroll > 80) {
+lenis.on('scroll', ({ scroll }) => {
+    if (scroll > 80) {
         navbar.classList.add("scrolled");
     } else {
         navbar.classList.remove("scrolled");
     }
-});
-
-// ===== SMOOTH SCROLL =====
-navItems.forEach((anchor) => {
-    anchor.addEventListener("click", function (e) {
-        e.preventDefault();
-        const targetId = this.getAttribute("href");
-        const target = document.querySelector(targetId);
-        if (target) {
-            target.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
-    });
 });
 
 // ===== ACTIVE NAV LINK HIGHLIGHT =====
@@ -118,12 +151,14 @@ const sections = document.querySelectorAll("section[id]");
 
 const sectionObserver = new IntersectionObserver(
     (entries) => {
+        if (isManualScrolling) return; // Skip if user clicked a link
+
         entries.forEach((entry) => {
             if (entry.isIntersecting) {
                 const id = entry.target.getAttribute("id");
                 navItems.forEach((item) => {
-                    item.classList.remove("active");
                     if (item.getAttribute("href") === `#${id}`) {
+                        navItems.forEach(i => i.classList.remove("active"));
                         item.classList.add("active");
                         updateLampPosition(item);
                     }
